@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../context/AuthContext";
+import UpdateModal from "../../components/UpdateModal"; // Import the Modal
+import { API_URL, APP_CONFIG } from "../../config/constants"; // Import constants
 
 const LoginScreen = ({ navigation }) => {
   const [username, setUsername] = useState("");
@@ -20,6 +22,30 @@ const LoginScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+
+  // --- VERSION UPDATE STATES ---
+  const [updateVisible, setUpdateVisible] = useState(false);
+  const [updateData, setUpdateData] = useState(null);
+
+  // Check for updates when the login screen mounts
+  useEffect(() => {
+    checkAppVersion();
+  }, []);
+
+  const checkAppVersion = async () => {
+    try {
+      const response = await fetch(`${API_URL}/app-config`);
+      const data = await response.json();
+
+      // If server version (e.g., 1.1.0) is different from app version (e.g., 1.0.0)
+      if (data.latestVersion !== APP_CONFIG.version) {
+        setUpdateData(data);
+        setUpdateVisible(true);
+      }
+    } catch (error) {
+      console.log("Update check skipped: Server unreachable or offline.");
+    }
+  };
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -110,6 +136,9 @@ const LoginScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* UPDATE MODAL COMPONENT */}
+      <UpdateModal visible={updateVisible} updateData={updateData} />
     </KeyboardAvoidingView>
   );
 };

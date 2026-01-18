@@ -132,22 +132,34 @@ export default function DashboardScreen() {
 
   const getPieChartData = (type) => {
     if (!summary) return [];
-    const data =
-      type === "main"
-        ? [
-            { name: "Income", value: summary.income, color: "#4CAF50" },
-            { name: "Expense", value: summary.expense, color: "#f44336" },
-          ]
-        : Object.entries(summary.categoryBreakdown || {}).map(
-            ([name, value], i) => ({
-              name,
-              value,
-              color: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0"][i % 4],
-            }),
-          );
-    return data.filter((d) => d.value > 0);
-  };
 
+    // Define specific colors for your business categories
+    const categoryColors = {
+      "Customer Payment": "#4CAF50", // Green for income
+      "Debt Recovery": "#8BC34A", // Light Green
+      Salary: "#2196F3",
+      Food: "#FF6384",
+      // Default fallback colors
+    };
+
+    if (type === "main") {
+      return [
+        { name: "Income", value: summary.income, color: "#4CAF50" },
+        { name: "Expense", value: summary.expense, color: "#f44336" },
+      ].filter((d) => d.value > 0);
+    } else {
+      return Object.entries(summary.categoryBreakdown || {})
+        .map(([name, value], i) => ({
+          name,
+          value,
+          color:
+            categoryColors[name] ||
+            ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0"][i % 4],
+        }))
+        .filter((d) => d.value > 0);
+    }
+  };
+  
   if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
