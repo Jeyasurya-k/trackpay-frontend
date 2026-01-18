@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,24 +9,26 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { customerAPI } from '../../api/client';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { customerAPI } from "../../api/client";
 
-const CustomerDetailScreen = ({ route, navigation }) => {
+export default function CustomerDetailScreen({ route, navigation }) {
   const { customerId } = route.params;
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAddPurchase, setShowAddPurchase] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
-  const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(5);
+
   const [newPurchase, setNewPurchase] = useState({
-    amount: '',
-    paid: '',
-    description: '',
-    date: new Date().toISOString().split('T')[0],
+    amount: "",
+    paid: "",
+    description: "",
+    date: new Date().toISOString().split("T")[0],
   });
-  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState("");
 
   useEffect(() => {
     loadCustomer();
@@ -38,19 +40,69 @@ const CustomerDetailScreen = ({ route, navigation }) => {
       const response = await customerAPI.getOne(customerId);
       setCustomer(response.data);
     } catch (error) {
-      console.error('Failed to load customer:', error);
-      Alert.alert('Error', 'Failed to load customer details');
+      Alert.alert("Error", "Failed to load customer details");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddPurchase = async () => {
-    if (!newPurchase.amount) {
-      Alert.alert('Error', 'Please enter amount');
+  // --- LOGIC: APPLY PAYMENT TO TOTAL PENDING (FIFO) ---
+  const handleAddPayment = async () => {
+    const amountToPay = parseFloat(paymentAmount);
+    if (!paymentAmount || isNaN(amountToPay) || amountToPay <= 0) {
+      Alert.alert("Error", "Please enter a valid amount");
       return;
     }
 
+    const allPurchases = [...(customer?.purchases || [])].sort(
+      (a, b) => new Date(a.date) - new Date(b.date),
+    );
+    const totalPending = allPurchases.reduce(
+      (sum, p) => sum + (p.amount - (p.paid || 0)),
+      0,
+    );
+
+    if (amountToPay > totalPending) {
+      Alert.alert("Error", "Payment exceeds total outstanding balance");
+      return;
+    }
+
+    try {
+      let remainingPayment = amountToPay;
+
+      // Loop through purchases and update them until the payment amount is exhausted
+      for (let purchase of allPurchases) {
+        const balance = purchase.amount - (purchase.paid || 0);
+        if (balance > 0 && remainingPayment > 0) {
+          const paymentForThis = Math.min(balance, remainingPayment);
+          const newPaid = (purchase.paid || 0) + paymentForThis;
+
+          await customerAPI.updatePurchase(customerId, purchase.id, {
+            ...purchase,
+            paid: newPaid,
+          });
+
+          remainingPayment -= paymentForThis;
+        }
+      }
+
+      setShowAddPayment(false);
+      setPaymentAmount("");
+      loadCustomer();
+      Alert.alert(
+        "Success",
+        `Total payment of ₹${amountToPay} applied to balance`,
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to record payment");
+    }
+  };
+
+  const handleAddPurchase = async () => {
+    if (!newPurchase.amount) {
+      Alert.alert("Error", "Please enter amount");
+      return;
+    }
     try {
       await customerAPI.addPurchase(customerId, {
         amount: parseFloat(newPurchase.amount),
@@ -58,264 +110,247 @@ const CustomerDetailScreen = ({ route, navigation }) => {
         description: newPurchase.description,
         date: newPurchase.date,
       });
-      
       setShowAddPurchase(false);
-      setNewPurchase({ amount: '', paid: '', description: '', date: new Date().toISOString().split('T')[0] });
-      loadCustomer();
-      Alert.alert('Success', 'Purchase added successfully');
-    } catch (error) {
-      console.error('Failed to add purchase:', error);
-      Alert.alert('Error', 'Failed to add purchase');
-    }
-  };
-
-  const handleAddPayment = async () => {
-    if (!paymentAmount || !selectedPurchase) {
-      Alert.alert('Error', 'Please enter payment amount');
-      return;
-    }
-
-    const purchase = customer.purchases.find(p => p._id === selectedPurchase);
-    const newPaid = purchase.paid + parseFloat(paymentAmount);
-
-    if (newPaid > purchase.amount) {
-      Alert.alert('Error', 'Payment amount exceeds remaining balance');
-      return;
-    }
-
-    try {
-      await customerAPI.updatePurchase(customerId, selectedPurchase, {
-        ...purchase,
-        paid: newPaid,
+      setNewPurchase({
+        amount: "",
+        paid: "",
+        description: "",
+        date: new Date().toISOString().split("T")[0],
       });
-      
-      setShowAddPayment(false);
-      setPaymentAmount('');
-      setSelectedPurchase(null);
       loadCustomer();
-      Alert.alert('Success', 'Payment recorded successfully');
     } catch (error) {
-      console.error('Failed to record payment:', error);
-      Alert.alert('Error', 'Failed to record payment');
+      Alert.alert("Error", "Failed to add purchase");
     }
   };
 
-  if (loading) {
+  if (loading || !customer)
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2196F3" />
       </View>
     );
-  }
 
-  if (!customer) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text>Customer not found</Text>
-      </View>
-    );
-  }
-
-  const totalAmount = customer.purchases.reduce((sum, p) => sum + p.amount, 0);
-  const totalPaid = customer.purchases.reduce((sum, p) => sum + p.paid, 0);
+  const allPurchases = customer.purchases || [];
+  const totalAmount = allPurchases.reduce((sum, p) => sum + p.amount, 0);
+  const totalPaid = allPurchases.reduce((sum, p) => sum + (p.paid || 0), 0);
   const pending = totalAmount - totalPaid;
+
+  const filteredPurchases = allPurchases.filter((p) => {
+    const d = new Date(p.date);
+    return (
+      d.getMonth() === new Date().getMonth() &&
+      d.getFullYear() === new Date().getFullYear()
+    );
+  });
+  const paginatedPurchases = filteredPurchases.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage,
+  );
+  const totalPages = Math.ceil(filteredPurchases.length / itemsPerPage);
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Fixed Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{customer.name}</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.content}>
-        {/* Customer Info */}
+      {/* Main Scrollable Area */}
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Info Card */}
         <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <Ionicons name="location" size={20} color="#2196F3" />
-            <Text style={styles.infoText}>{customer.location || 'No location'}</Text>
+          <View style={styles.avatarContainer}>
+            <Ionicons name="person" size={40} color="#fff" />
           </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="call" size={20} color="#2196F3" />
-            <Text style={styles.infoText}>{customer.phone}</Text>
+          <View style={styles.infoContent}>
+            <Text style={styles.customerName}>{customer.name}</Text>
+            <Text style={styles.infoText}>
+              <Ionicons name="call" size={14} /> {customer.phone}
+            </Text>
           </View>
         </View>
 
         {/* Summary */}
         <View style={styles.summarySection}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Amount:</Text>
-            <Text style={styles.summaryValue}>${totalAmount.toFixed(2)}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Paid:</Text>
-            <Text style={[styles.summaryValue, { color: '#4CAF50' }]}>${totalPaid.toFixed(2)}</Text>
-          </View>
-          <View style={[styles.summaryRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>Pending Amount:</Text>
-            <Text style={[styles.totalValue, { color: pending > 0 ? '#f44336' : '#4CAF50' }]}>
-              ${pending.toFixed(2)}
-            </Text>
+          <Text style={styles.sectionTitle}>Financial Summary</Text>
+          <View style={styles.summaryGrid}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Total Bill</Text>
+              <Text style={styles.summaryValueLarge}>₹{totalAmount}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Total Paid</Text>
+              <Text style={[styles.summaryValueLarge, { color: "#4CAF50" }]}>
+                ₹{totalPaid}
+              </Text>
+            </View>
+            <View style={styles.pendingItem}>
+              <Text style={styles.summaryLabel}>Total Outstanding Balance</Text>
+              <Text
+                style={[
+                  styles.summaryValueLarge,
+                  { color: pending > 0 ? "#f44336" : "#4CAF50", fontSize: 28 },
+                ]}
+              >
+                ₹{pending.toFixed(2)}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Add Purchase Button */}
-        <TouchableOpacity style={styles.addPurchaseBtn} onPress={() => setShowAddPurchase(true)}>
-          <Ionicons name="add-circle" size={24} color="#fff" />
-          <Text style={styles.addPurchaseBtnText}>Add Purchase</Text>
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={[styles.splitBtn, { backgroundColor: "#2196F3" }]}
+            onPress={() => setShowAddPurchase(true)}
+          >
+            <Ionicons name="cart" size={20} color="#fff" />
+            <Text style={styles.splitBtnText}>New Purchase</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.splitBtn, { backgroundColor: "#4CAF50" }]}
+            onPress={() => setShowAddPayment(true)}
+          >
+            <Ionicons name="cash" size={20} color="#fff" />
+            <Text style={styles.splitBtnText}>Pay Pending</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Purchase History */}
-        <Text style={styles.sectionTitle}>Purchase History</Text>
-        {customer.purchases.map((purchase) => {
-          const remaining = purchase.amount - purchase.paid;
-          return (
-            <View key={purchase._id} style={styles.purchaseCard}>
-              <View style={styles.purchaseHeader}>
-                <Text style={styles.purchaseDescription}>
-                  {purchase.description || 'No description'}
-                </Text>
-                <Text style={styles.purchaseDate}>
-                  {new Date(purchase.date).toLocaleDateString()}
-                </Text>
-              </View>
-              <View style={styles.purchaseDetails}>
-                <View style={styles.purchaseDetailRow}>
-                  <Text style={styles.detailLabel}>Amount:</Text>
-                  <Text style={styles.detailValue}>${purchase.amount.toFixed(2)}</Text>
-                </View>
-                <View style={styles.purchaseDetailRow}>
-                  <Text style={styles.detailLabel}>Paid:</Text>
-                  <Text style={[styles.detailValue, { color: '#4CAF50' }]}>
-                    ${purchase.paid.toFixed(2)}
-                  </Text>
-                </View>
-                <View style={styles.purchaseDetailRow}>
-                  <Text style={styles.detailLabel}>Remaining:</Text>
-                  <Text style={[styles.detailValue, { color: remaining > 0 ? '#f44336' : '#4CAF50' }]}>
-                    ${remaining.toFixed(2)}
-                  </Text>
-                </View>
-              </View>
-              {remaining > 0 && (
-                <TouchableOpacity
-                  style={styles.payBtn}
-                  onPress={() => { setSelectedPurchase(purchase._id); setShowAddPayment(true); }}
-                >
-                  <Text style={styles.payBtnText}>Record Payment</Text>
-                </TouchableOpacity>
-              )}
+        {/* History Table */}
+        <View style={styles.historySection}>
+          <Text style={styles.sectionTitle}>History (Current Month)</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, { flex: 2 }]}>Desc</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Amt</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Bal</Text>
             </View>
-          );
-        })}
-        {customer.purchases.length === 0 && (
-          <Text style={styles.emptyText}>No purchases recorded</Text>
-        )}
-      </ScrollView>
-
-      {/* Add Purchase Modal */}
-      <Modal
-        visible={showAddPurchase}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowAddPurchase(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Purchase</Text>
-              <TouchableOpacity onPress={() => setShowAddPurchase(false)}>
-                <Ionicons name="close" size={24} color="#333" />
+            {paginatedPurchases.map((p) => (
+              <View key={p.id} style={styles.tableRow}>
+                <View style={{ flex: 2 }}>
+                  <Text style={styles.tableCellText}>
+                    {p.description || "Purchase"}
+                  </Text>
+                  <Text style={styles.tableDateText}>
+                    {new Date(p.date).toLocaleDateString()}
+                  </Text>
+                </View>
+                <Text style={{ flex: 1 }}>₹{p.amount}</Text>
+                <Text
+                  style={{
+                    flex: 1,
+                    color: p.amount - p.paid > 0 ? "#f44336" : "#4CAF50",
+                  }}
+                >
+                  ₹{(p.amount - p.paid).toFixed(1)}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {totalPages > 1 && (
+            <View style={styles.pagination}>
+              <TouchableOpacity
+                onPress={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                <Ionicons name="chevron-back" size={24} color="#2196F3" />
+              </TouchableOpacity>
+              <Text>
+                Page {currentPage} of {totalPages}
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+              >
+                <Ionicons name="chevron-forward" size={24} color="#2196F3" />
               </TouchableOpacity>
             </View>
+          )}
+        </View>
+      </ScrollView>
 
+      {/* MODAL: NEW PURCHASE */}
+      <Modal visible={showAddPurchase} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>New Purchase</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Total Amount *"
+              placeholder="Amount"
               keyboardType="decimal-pad"
-              value={newPurchase.amount}
-              onChangeText={(text) => setNewPurchase({ ...newPurchase, amount: text })}
+              onChangeText={(t) =>
+                setNewPurchase({ ...newPurchase, amount: t })
+              }
             />
-
             <TextInput
               style={styles.modalInput}
-              placeholder="Amount Paid"
+              placeholder="Paid"
               keyboardType="decimal-pad"
-              value={newPurchase.paid}
-              onChangeText={(text) => setNewPurchase({ ...newPurchase, paid: text })}
+              onChangeText={(t) => setNewPurchase({ ...newPurchase, paid: t })}
             />
-
             <TextInput
               style={styles.modalInput}
               placeholder="Description"
-              value={newPurchase.description}
-              onChangeText={(text) => setNewPurchase({ ...newPurchase, description: text })}
+              onChangeText={(t) =>
+                setNewPurchase({ ...newPurchase, description: t })
+              }
             />
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Date (YYYY-MM-DD)"
-              value={newPurchase.date}
-              onChangeText={(text) => setNewPurchase({ ...newPurchase, date: text })}
-            />
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalCancelBtn]}
                 onPress={() => setShowAddPurchase(false)}
+                style={styles.modalBtn}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalAddBtn]}
                 onPress={handleAddPurchase}
+                style={[styles.modalBtn, styles.modalAddBtn]}
               >
-                <Text style={styles.modalBtnText}>Add</Text>
+                <Text style={{ color: "#fff" }}>Add</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Add Payment Modal */}
-      <Modal
-        visible={showAddPayment}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowAddPayment(false)}
-      >
+      {/* MODAL: PAY TOTAL PENDING */}
+      <Modal visible={showAddPayment} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Record Payment</Text>
-              <TouchableOpacity onPress={() => setShowAddPayment(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
+            <Text style={styles.modalTitle}>Receive Payment</Text>
+            <View style={styles.paymentContext}>
+              <Text style={styles.contextText}>
+                Total Outstanding: ₹{pending.toFixed(2)}
+              </Text>
             </View>
-
             <TextInput
               style={styles.modalInput}
-              placeholder="Payment Amount"
+              placeholder="Amount Paid Now"
               keyboardType="decimal-pad"
               value={paymentAmount}
               onChangeText={setPaymentAmount}
+              autoFocus
             />
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalCancelBtn]}
                 onPress={() => setShowAddPayment(false)}
+                style={styles.modalBtn}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalAddBtn]}
                 onPress={handleAddPayment}
+                style={[styles.modalBtn, styles.modalAddBtn]}
               >
-                <Text style={styles.modalBtnText}>Record</Text>
+                <Text style={{ color: "#fff" }}>Confirm</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -323,241 +358,124 @@ const CustomerDetailScreen = ({ route, navigation }) => {
       </Modal>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
-    backgroundColor: '#2196F3',
+    backgroundColor: "#2196F3",
     padding: 20,
     paddingTop: 50,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
+  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  content: { flex: 1, padding: 16 },
   infoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
-    padding: 16,
+    padding: 15,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    elevation: 2,
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+  avatarContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#2196F3",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 15,
   },
-  infoText: {
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#333',
-  },
+  customerName: { fontSize: 20, fontWeight: "bold" },
+  infoText: { color: "#666", marginTop: 4 },
   summarySection: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  summaryLabel: {
-    fontSize: 16,
-    color: '#666',
-  },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2196F3',
-  },
-  totalRow: {
+  sectionTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 12 },
+  summaryGrid: { flexDirection: "row", flexWrap: "wrap" },
+  summaryItem: { width: "50%", marginBottom: 10 },
+  pendingItem: {
+    width: "100%",
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 12,
-    marginTop: 4,
+    borderTopColor: "#eee",
+    paddingTop: 10,
   },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  totalValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  addPurchaseBtn: {
-    backgroundColor: '#2196F3',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  addPurchaseBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+  summaryLabel: { fontSize: 12, color: "#666" },
+  summaryValueLarge: { fontSize: 20, fontWeight: "bold", color: "#2196F3" },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 16,
   },
-  purchaseCard: {
-    backgroundColor: '#fff',
+  splitBtn: {
+    flex: 0.48,
+    borderRadius: 10,
+    padding: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 2,
+  },
+  splitBtnText: { color: "#fff", fontWeight: "bold", marginLeft: 8 },
+  historySection: {
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  purchaseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+  table: { borderTopWidth: 1, borderColor: "#eee" },
+  tableHeader: {
+    flexDirection: "row",
+    paddingVertical: 10,
+    backgroundColor: "#f9f9f9",
   },
-  purchaseDescription: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
+  tableHeaderText: { fontWeight: "bold", fontSize: 12 },
+  tableRow: {
+    flexDirection: "row",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
-  purchaseDate: {
-    fontSize: 14,
-    color: '#666',
-  },
-  purchaseDetails: {
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 12,
-  },
-  purchaseDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  payBtn: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  payBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#666',
-    fontSize: 16,
-    marginTop: 20,
+  tableCellText: { fontSize: 13 },
+  tableDateText: { fontSize: 10, color: "#999" },
+  pagination: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
     padding: 20,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
+  modalContent: { backgroundColor: "#fff", borderRadius: 12, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 15 },
   modalInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 15,
-    fontSize: 16,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
     marginBottom: 15,
-    backgroundColor: '#f9f9f9',
   },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
+  modalButtons: { flexDirection: "row", justifyContent: "flex-end" },
+  modalBtn: { padding: 12, marginLeft: 10 },
+  modalAddBtn: { backgroundColor: "#2196F3", borderRadius: 8 },
+  paymentContext: {
+    backgroundColor: "#e3f2fd",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
   },
-  modalBtn: {
-    flex: 1,
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  modalCancelBtn: {
-    backgroundColor: '#f0f0f0',
-  },
-  modalAddBtn: {
-    backgroundColor: '#2196F3',
-  },
-  modalCancelText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  modalBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  contextText: { color: "#1976D2", fontWeight: "bold" },
 });
-
-export default CustomerDetailScreen;

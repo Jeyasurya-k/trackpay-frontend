@@ -30,12 +30,12 @@ const CustomerCard = ({ customer, onPress }) => {
       <View style={styles.footer}>
         <View style={styles.amountBox}>
           <Text style={styles.amountLabel}>Total</Text>
-          <Text style={styles.amountValue}>${totalAmount.toFixed(2)}</Text>
+          <Text style={styles.amountValue}>₹{totalAmount.toFixed(2)}</Text>
         </View>
         <View style={styles.amountBox}>
           <Text style={styles.amountLabel}>Paid</Text>
           <Text style={[styles.amountValue, { color: "#4CAF50" }]}>
-            ${totalPaid.toFixed(2)}
+            ₹{totalPaid.toFixed(2)}
           </Text>
         </View>
         <View style={styles.amountBox}>
@@ -46,7 +46,7 @@ const CustomerCard = ({ customer, onPress }) => {
               { color: pending > 0 ? "#f44336" : "#4CAF50" },
             ]}
           >
-            ${pending.toFixed(2)}
+            ₹{pending.toFixed(2)}
           </Text>
         </View>
       </View>
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 4,
   },
-  amountValue: {
+  amountValue: {  
     fontSize: 16,
     fontWeight: "bold",
     color: "#2196F3",

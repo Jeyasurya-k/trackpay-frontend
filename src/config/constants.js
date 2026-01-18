@@ -1,20 +1,9 @@
 import { Platform } from "react-native";
 
 const getApiUrl = () => {
-  const isDevelopment = __DEV__;
-
-  if (!isDevelopment) {
-    return "https://your-backend-url.com/api";
-  }
-
-  // Development mode
-  if (Platform.OS === "android") {
-    return "http://10.0.2.2:5000/api";
-  } else if (Platform.OS === "ios") {
-    return "http://localhost:5000/api";
-  } else {
-    return "http://localhost:5000/api";
-  }
+  // Your Live Render URL
+  // Note: Ensure your backend is actually running on Render!
+  return "https://trackpay-backend.onrender.com/api";
 };
 
 export const API_URL = getApiUrl();
@@ -23,7 +12,7 @@ export const APP_CONFIG = {
   appName: "TrackPay",
   version: "1.0.0",
   defaultCategories: [
-    "Salary",
+    "Customer Payment",
     "Freelance",
     "Food",
     "Transport",
@@ -37,3 +26,7 @@ export const APP_CONFIG = {
 };
 
 console.log("🌐 API URL:", API_URL);
+console.log(
+  "🔧 Environment:",
+  __DEV__ ? "Development (Forcing Production API)" : "Production",
+);

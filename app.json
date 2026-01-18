@@ -1,20 +1,25 @@
 {
   "expo": {
     "name": "TrackPay",
-    "slug": "trackpay-app",
+    "slug": "trackpay",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#2196F3"
-    },
-    "assetBundlePatterns": ["**/*"],
+    // "splash": {
+    //   "image": "./assets/splash.png",
+    //   "resizeMode": "contain",
+    //   "backgroundColor": "#2196F3"
+    // },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.trackpay"
+      "bundleIdentifier": "com.yourcompany.trackpay",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -27,7 +32,14 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiUrl": "https://your-backend-url.onrender.com/api"
-    }
+      "apiUrl": "https://your-backend-url.onrender.com/api",
+      "eas": {
+        "projectId": "84cc2adc-9215-4f11-8c34-0ec4bf31f9dc"
+      }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ],
+    "owner": "jeyasurya2k3s-organization"
   }
 }

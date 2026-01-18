@@ -28,7 +28,7 @@ const TransactionCard = ({ transaction, onDelete }) => {
           <Text
             style={[styles.amount, { color: isIncome ? "#4CAF50" : "#f44336" }]}
           >
-            {isIncome ? "+" : "-"}${transaction.amount.toFixed(2)}
+            {isIncome ? "+" : "-"}₹{transaction.amount.toFixed(2)}
           </Text>
           {onDelete && (
             <TouchableOpacity

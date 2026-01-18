@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,64 +10,96 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { customerAPI } from '../../api/client';
-import CustomerCard from '../../components/CustomerCard';
-import { useFocusEffect } from '@react-navigation/native';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { customerAPI } from "../../api/client";
+import CustomerCard from "../../components/CustomerCard";
+import { useFocusEffect } from "@react-navigation/native";
 
-const CustomersScreen = ({ navigation }) => {
+export default function CustomersScreen({ navigation }) {
   const [customers, setCustomers] = useState([]);
+  const [filteredCustomers, setFilteredCustomers] = useState([]); // List to display
   const [summary, setSummary] = useState({ totalAmount: 0, totalPending: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Search States
+  const [searchQuery, setSearchQuery] = useState("");
+
   const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    location: '',
-    phone: '',
+    name: "",
+    location: "",
+    phone: "",
   });
 
   useFocusEffect(
     useCallback(() => {
       loadCustomers();
-    }, [])
+    }, []),
   );
+
+  // Debounce logic for searching
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      handleSearch(searchQuery);
+    }, 400); // 400ms delay
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, customers]);
 
   const loadCustomers = async () => {
     try {
       setLoading(true);
       const response = await customerAPI.getAll();
       setCustomers(response.data.customers);
+      setFilteredCustomers(response.data.customers); // Initial set
       setSummary(response.data.summary);
     } catch (error) {
-      console.error('Failed to load customers:', error);
-      Alert.alert('Error', 'Failed to load customers');
+      console.error("Failed to load customers:", error);
+      Alert.alert("Error", "Failed to load customers");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  const handleSearch = (query) => {
+    if (!query) {
+      setFilteredCustomers(customers);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const filtered = customers.filter((customer) => {
+      return (
+        customer.name?.toLowerCase().includes(lowerQuery) ||
+        customer.location?.toLowerCase().includes(lowerQuery) ||
+        customer.phone?.includes(lowerQuery)
+      );
+    });
+    setFilteredCustomers(filtered);
+  };
+
   const handleAddCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) {
-      Alert.alert('Error', 'Please fill required fields');
+      Alert.alert("Error", "Please fill required fields (Name and Phone)");
       return;
     }
 
     try {
       await customerAPI.create(newCustomer);
       setShowAddModal(false);
-      setNewCustomer({ name: '', location: '', phone: '' });
+      setNewCustomer({ name: "", location: "", phone: "" });
       loadCustomers();
-      Alert.alert('Success', 'Customer added successfully');
+      Alert.alert("Success", "Customer added successfully");
     } catch (error) {
-      console.error('Failed to add customer:', error);
-      Alert.alert('Error', 'Failed to add customer');
+      console.error("Failed to add customer:", error);
+      Alert.alert("Error", error.message || "Failed to add customer");
     }
   };
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2196F3" />
@@ -80,22 +112,57 @@ const CustomersScreen = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Customers</Text>
-        <TouchableOpacity onPress={() => setShowAddModal(true)} style={styles.addBtn}>
+        <TouchableOpacity
+          onPress={() => setShowAddModal(true)}
+          style={styles.addBtn}
+        >
           <Ionicons name="add-circle" size={28} color="#fff" />
         </TouchableOpacity>
+      </View>
+
+      {/* Search Bar Section */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchWrapper}>
+          <Ionicons
+            name="search"
+            size={20}
+            color="#999"
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name, location, or phone..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Ionicons name="close-circle" size={18} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Summary Cards */}
       <View style={styles.summaryContainer}>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Amount</Text>
-          <Text style={styles.summaryValue}>${summary.totalAmount.toFixed(2)}</Text>
+          <Ionicons name="cash-outline" size={24} color="#2196F3" />
+          <View style={styles.summaryContent}>
+            <Text style={styles.summaryLabel}>Total Amount</Text>
+            <Text style={styles.summaryValue}>
+              ₹{summary.totalAmount.toFixed(2)}
+            </Text>
+          </View>
         </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Pending</Text>
-          <Text style={[styles.summaryValue, styles.pendingValue]}>
-            ${summary.totalPending.toFixed(2)}
-          </Text>
+          <Ionicons name="time-outline" size={24} color="#f44336" />
+          <View style={styles.summaryContent}>
+            <Text style={styles.summaryLabel}>Total Pending</Text>
+            <Text style={[styles.summaryValue, styles.pendingValue]}>
+              ₹{summary.totalPending.toFixed(2)}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -103,22 +170,41 @@ const CustomersScreen = ({ navigation }) => {
       <ScrollView
         style={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadCustomers(); }} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              setSearchQuery(""); // Clear search on refresh
+              loadCustomers();
+            }}
+          />
         }
       >
-        {customers.map((customer) => (
+        {filteredCustomers.map((customer) => (
           <CustomerCard
-            key={customer._id}
+            key={customer.id}
             customer={customer}
-            onPress={() => navigation.navigate('CustomerDetail', { customerId: customer._id })}
+            onPress={() =>
+              navigation.navigate("CustomerDetail", { customerId: customer.id })
+            }
           />
         ))}
-        {customers.length === 0 && (
-          <Text style={styles.emptyText}>No customers found</Text>
+        {filteredCustomers.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="people-outline" size={80} color="#ccc" />
+            <Text style={styles.emptyText}>
+              {searchQuery ? "No results found" : "No customers yet"}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {searchQuery
+                ? "Try searching for something else"
+                : "Tap + to add your first customer"}
+            </Text>
+          </View>
         )}
       </ScrollView>
 
-      {/* Add Customer Modal */}
+      {/* Add Customer Modal remains the same ... */}
       <Modal
         visible={showAddModal}
         animationType="slide"
@@ -138,14 +224,18 @@ const CustomersScreen = ({ navigation }) => {
               style={styles.modalInput}
               placeholder="Customer Name *"
               value={newCustomer.name}
-              onChangeText={(text) => setNewCustomer({ ...newCustomer, name: text })}
+              onChangeText={(text) =>
+                setNewCustomer({ ...newCustomer, name: text })
+              }
             />
 
             <TextInput
               style={styles.modalInput}
-              placeholder="Location"
+              placeholder="Location (optional)"
               value={newCustomer.location}
-              onChangeText={(text) => setNewCustomer({ ...newCustomer, location: text })}
+              onChangeText={(text) =>
+                setNewCustomer({ ...newCustomer, location: text })
+              }
             />
 
             <TextInput
@@ -153,7 +243,9 @@ const CustomersScreen = ({ navigation }) => {
               placeholder="Phone Number *"
               keyboardType="phone-pad"
               value={newCustomer.phone}
-              onChangeText={(text) => setNewCustomer({ ...newCustomer, phone: text })}
+              onChangeText={(text) =>
+                setNewCustomer({ ...newCustomer, phone: text })
+              }
             />
 
             <View style={styles.modalButtons}>
@@ -175,131 +267,97 @@ const CustomersScreen = ({ navigation }) => {
       </Modal>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  // Existing styles ...
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
-    backgroundColor: '#2196F3',
+    backgroundColor: "#2196F3",
     padding: 20,
     paddingTop: 50,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+  headerTitle: { fontSize: 24, fontWeight: "bold", color: "#fff" },
+  addBtn: { padding: 4 },
+
+  // NEW: Search Styles
+  searchContainer: {
+    backgroundColor: "#2196F3",
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
-  addBtn: {
-    padding: 4,
+  searchWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 45,
   },
-  summaryContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
+  searchIcon: { marginRight: 8 },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#333",
   },
+
+  summaryContainer: { flexDirection: "row", padding: 16, gap: 12 },
   summaryCard: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    flexDirection: "row",
+    alignItems: "center",
     elevation: 3,
   },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
+  summaryContent: { marginLeft: 12, flex: 1 },
+  summaryLabel: { fontSize: 12, color: "#666", marginBottom: 4 },
+  summaryValue: { fontSize: 18, fontWeight: "bold", color: "#2196F3" },
+  pendingValue: { color: "#f44336" },
+  content: { flex: 1, padding: 16 },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
   },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2196F3',
-  },
-  pendingValue: {
-    color: '#f44336',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#666',
-    fontSize: 16,
-    marginTop: 40,
-  },
+  emptyText: { fontSize: 18, color: "#666", marginTop: 16, fontWeight: "600" },
+  emptySubtext: { fontSize: 14, color: "#999", marginTop: 8 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
+  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#333" },
   modalInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 10,
     padding: 15,
     fontSize: 16,
     marginBottom: 15,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#f9f9f9",
   },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 10,
-  },
-  modalBtn: {
-    flex: 1,
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  modalCancelBtn: {
-    backgroundColor: '#f0f0f0',
-  },
-  modalAddBtn: {
-    backgroundColor: '#2196F3',
-  },
-  modalCancelText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  modalBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  modalButtons: { flexDirection: "row", gap: 12, marginTop: 10 },
+  modalBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: "center" },
+  modalCancelBtn: { backgroundColor: "#f0f0f0" },
+  modalAddBtn: { backgroundColor: "#2196F3" },
+  modalCancelText: { color: "#333", fontSize: 16, fontWeight: "bold" },
+  modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 });
-
-export default CustomersScreen;
